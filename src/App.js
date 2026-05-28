@@ -1,50 +1,95 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./App.css";
 
-function App() {
-  const [customerInfo, setCustomerInfo] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    address: "",
-    isDelivery: false,
-  });
+const STORAGE_KEY = "mariosPizzaLastOrder";
 
-  const [pizzaOrder, setPizzaorder] = useState({
-    size: "medium",
-    crust: "regular",
-    toppings: [],
-    specialInstructions: "",
-  });
+const initialCustomerInfo = {
+  name: "",
+  phone: "",
+  email: "",
+  address: "",
+  isDelivery: false,
+};
+
+const initialPizzaOrder = {
+  size: "medium",
+  crust: "regular",
+  quantity: 1,
+  toppings: [],
+  sides: [],
+  specialInstructions: "",
+};
+
+const sizePrices = {
+  small: 12.99,
+  medium: 15.99,
+  large: 18.99,
+  xlarge: 21.99,
+};
+
+const crustPrices = {
+  regular: 0,
+  thin: 1,
+  thick: 2,
+  stuffed: 3,
+};
+
+const sideOptions = [
+  { id: "cola", name: "Cola", price: 2.49 },
+  { id: "lemonade", name: "Lemonade", price: 2.99 },
+  { id: "garlic-bread", name: "Garlic Bread", price: 4.49 },
+  { id: "ranch-dip", name: "Ranch Dip", price: 0.99 },
+  { id: "marinara-dip", name: "Marinara Dip", price: 0.99 },
+  { id: "cheesy-breadsticks", name: "Cheesy Breadsticks", price: 5.99 },
+];
+
+const labels = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+  xlarge: "Extra Large",
+  regular: "Regular",
+  thin: "Thin",
+  thick: "Thick",
+  stuffed: "Stuffed",
+};
+
+const formatLabel = (value) =>
+  labels[value] || value.charAt(0).toUpperCase() + value.slice(1);
+
+const getPizzaBasePrice = (order) => sizePrices[order.size] + crustPrices[order.crust];
+
+const getPizzaUnitPrice = (order) =>
+  getPizzaBasePrice(order) + order.toppings.length * 1.5;
+
+const getSidesTotal = (sides = []) =>
+  sides.reduce((total, side) => total + side.price * side.quantity, 0);
+
+function App() {
+  const [customerInfo, setCustomerInfo] = useState(initialCustomerInfo);
+  const [pizzaOrder, setPizzaOrder] = useState(initialPizzaOrder);
+  const [lastOrder, setLastOrder] = useState(null);
 
   const [formState, setFormState] = useState({
-    error: {},
     isSubmitting: false,
-    showOrderSummary: false,
     currentErrors: {},
   });
 
-  const calculateTotalprice = () => {
-    let total = 0;
-    const sizePrices = {
-      small: 12.99,
-      medium: 15.99,
-      large: 18.99,
-      xlarge: 21.99,
-    };
+  useEffect(() => {
+    try {
+      const savedOrder = localStorage.getItem(STORAGE_KEY);
 
-    total += sizePrices[pizzaOrder.size];
+      if (savedOrder) {
+        setLastOrder(JSON.parse(savedOrder));
+      }
+    } catch (error) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, []);
 
-    const crustPrices = {
-      regular: 0,
-      thin: 1,
-      thick: 2,
-      stuffed: 3,
-    };
-
-    total += crustPrices[pizzaOrder.crust];
-
-    total += pizzaOrder.toppings.length * 1.5;
+  const calculateTotalPrice = () => {
+    let total = getPizzaUnitPrice(pizzaOrder) * pizzaOrder.quantity;
+    total += getSidesTotal(pizzaOrder.sides);
 
     if (customerInfo.isDelivery) {
       total += 2.99;
@@ -58,23 +103,22 @@ function App() {
 
     if (!customerInfo.name.trim()) {
       errors.name = "Please enter your full name";
-    } else if (customerInfo.name.length < 2) {
+    } else if (customerInfo.name.trim().length < 2) {
       errors.name = "Name must be at least 2 characters";
     }
 
-    const phoneRegex = /^[\d\d\-\(\)\+]{10,}$/;
+    const phoneRegex = /^[\d\-()+]{10,}$/;
     if (!customerInfo.phone.trim()) {
       errors.phone = "Phone number is required";
     } else if (!phoneRegex.test(customerInfo.phone.replace(/\s/g, ""))) {
-      errors.phone = "Please enter a valid phone Number";
+      errors.phone = "Please enter a valid phone number";
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
     if (!customerInfo.email.trim()) {
-      errors.email = "Email Id is required";
+      errors.email = "Email ID is required";
     } else if (!emailRegex.test(customerInfo.email)) {
-      errors.email = "Please enter a valid Email Id";
+      errors.email = "Please enter a valid email ID";
     }
 
     if (customerInfo.isDelivery && !customerInfo.address.trim()) {
@@ -82,7 +126,11 @@ function App() {
     }
 
     if (pizzaOrder.toppings.length === 0) {
-      errors.toppings = "Please select atleast one topping";
+      errors.toppings = "Please select at least one topping";
+    }
+
+    if (pizzaOrder.quantity < 1) {
+      errors.quantity = "Please enter at least 1 pizza";
     }
 
     return errors;
@@ -98,8 +146,58 @@ function App() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  const clearError = (fieldName) => {
+    if (!formState.currentErrors[fieldName]) {
+      return;
+    }
+
+    setFormState((prev) => ({
+      ...prev,
+      currentErrors: { ...prev.currentErrors, [fieldName]: "" },
+    }));
+  };
+
+  const resetForm = () => {
+    setCustomerInfo(initialCustomerInfo);
+    setPizzaOrder(initialPizzaOrder);
+    setFormState({
+      isSubmitting: false,
+      currentErrors: {},
+    });
+  };
+
+  const updateSide = (sideOption, isChecked) => {
+    if (isChecked) {
+      setPizzaOrder({
+        ...pizzaOrder,
+        sides: [
+          ...pizzaOrder.sides,
+          { ...sideOption, quantity: 1 },
+        ],
+      });
+      return;
+    }
+
+    setPizzaOrder({
+      ...pizzaOrder,
+      sides: pizzaOrder.sides.filter((side) => side.id !== sideOption.id),
+    });
+  };
+
+  const updateSideQuantity = (sideId, quantity) => {
+    setPizzaOrder({
+      ...pizzaOrder,
+      sides: pizzaOrder.sides.map((side) =>
+        side.id === sideId
+          ? { ...side, quantity: Math.max(1, Number(quantity) || 1) }
+          : side,
+      ),
+    });
+  };
+
+  const handleSubmit = (e) => {
     e.preventDefault();
+
     const isValid = checkValidation();
     if (!isValid) {
       const firstError = document.querySelector(".error");
@@ -108,60 +206,161 @@ function App() {
       }
       return;
     }
+
     setFormState((prev) => ({
       ...prev,
       isSubmitting: true,
     }));
 
-    try {
-      const orderData = {
-        customer: customerInfo,
-        pizza: pizzaOrder,
-        total: calculateTotalprice(),
-        orderTime: new Date().toISOString(),
-        estimatedDelivery: customerInfo.isDelivery
-          ? "45-60 minutes"
-          : "20-30 Minutes",
-      };
-      console.log("Submitting order:", orderData);
-      alert(`Order placed successfully!
-          
-          Order #${Math.floor(Math.random() * 10000)}
-          Total: ${calculateTotalprice()}
-          ${ 
-            customerInfo.isDelivery
-              ? `Delivery to ${customerInfo.address}`
-              : "Ready for pickup at mario's Pizza"
-          }
-          Thank you, ${customerInfo.name}! Your delicious pizza is being prepared,
-          
-          `);
-      setCustomerInfo({
-        name: "",
-        phone: "",
-        email: "",
-        address: "",
-        isDelivery: false,
-      });
+    const orderData = {
+      orderNumber: Math.floor(10000 + Math.random() * 90000),
+      customer: { ...customerInfo },
+      pizza: { ...pizzaOrder },
+      pizzaTotal: (getPizzaUnitPrice(pizzaOrder) * pizzaOrder.quantity).toFixed(2),
+      sidesTotal: getSidesTotal(pizzaOrder.sides).toFixed(2),
+      subtotal: (
+        getPizzaUnitPrice(pizzaOrder) * pizzaOrder.quantity +
+        getSidesTotal(pizzaOrder.sides)
+      ).toFixed(2),
+      deliveryFee: customerInfo.isDelivery ? "2.99" : "0.00",
+      total: calculateTotalPrice(),
+      orderTime: new Date().toISOString(),
+      estimatedTime: customerInfo.isDelivery ? "45-60 minutes" : "20-30 minutes",
+      status: "Confirmed",
+    };
 
-      setPizzaorder({
-        size: "medium",
-        crust: "regular",
-        toppings: [],
-        specialInstructions: "",
-      });
-    } catch (error) {
-      console.log("Order submission failed", error);
-      alert(
-        "Sorry, there was a problem placing your order. Please try again or Call Mario's Delivery at (555)",
-      );
-    } finally {
-      setFormState((prev) => ({
-        ...prev,
-        isSubmitting: false,
-      }));
-    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(orderData));
+    setLastOrder(orderData);
+    resetForm();
   };
+
+  const handleNewOrder = () => {
+    setLastOrder(null);
+    resetForm();
+  };
+
+  const handleClearReceipt = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setLastOrder(null);
+  };
+
+  if (lastOrder) {
+    const orderDate = new Date(lastOrder.orderTime);
+    const receiptPizza = {
+      ...lastOrder.pizza,
+      quantity: lastOrder.pizza.quantity || 1,
+      sides: lastOrder.pizza.sides || [],
+    };
+
+    return (
+      <div className="App">
+        <header>
+          <h1>Mario's Pizza - Order Confirmed</h1>
+          <p>Your pizza is being prepared now</p>
+        </header>
+
+        <main className="receipt-page">
+          <section className="receipt-card">
+            <div className="receipt-heading">
+              <div>
+                <p className="receipt-kicker">Receipt</p>
+                <h2>Order #{lastOrder.orderNumber}</h2>
+              </div>
+              <span className="status-pill">{lastOrder.status}</span>
+            </div>
+
+            <div className="receipt-grid">
+              <div>
+                <h3>Customer</h3>
+                <p>{lastOrder.customer.name}</p>
+                <p>{lastOrder.customer.phone}</p>
+                <p>{lastOrder.customer.email}</p>
+              </div>
+
+              <div>
+                <h3>{lastOrder.customer.isDelivery ? "Delivery" : "Pickup"}</h3>
+                <p>Estimated time: {lastOrder.estimatedTime}</p>
+                <p>
+                  {lastOrder.customer.isDelivery
+                    ? lastOrder.customer.address
+                    : "Mario's Pizza counter pickup"}
+                </p>
+              </div>
+            </div>
+
+            <div className="receipt-details">
+              <h3>Order Details</h3>
+              <div className="summary-item">
+                <span className="item-name">
+                  {receiptPizza.quantity} x {formatLabel(receiptPizza.size)} Pizza (
+                  {formatLabel(receiptPizza.crust)} Crust)
+                </span>
+                <span className="item-price">
+                  ${(getPizzaBasePrice(receiptPizza) * receiptPizza.quantity).toFixed(2)}
+                </span>
+              </div>
+              <div className="summary-item">
+                <span className="item-name">
+                  Toppings: {receiptPizza.toppings.join(", ")}
+                </span>
+                <span className="item-price">
+                  ${(receiptPizza.toppings.length * 1.5 * receiptPizza.quantity).toFixed(2)}
+                </span>
+              </div>
+              {receiptPizza.sides.length > 0 && (
+                <div className="receipt-sides">
+                  <h4>Sides</h4>
+                  {receiptPizza.sides.map((side) => (
+                    <div className="summary-item" key={side.id}>
+                      <span className="item-name">
+                        {side.quantity} x {side.name}
+                      </span>
+                      <span className="item-price">
+                        ${(side.price * side.quantity).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {receiptPizza.specialInstructions && (
+                <p className="receipt-note">
+                  <strong>Special Instructions:</strong>{" "}
+                  {receiptPizza.specialInstructions}
+                </p>
+              )}
+              {lastOrder.customer.isDelivery && (
+                <div className="summary-item">
+                  <span className="item-name">Delivery Fee</span>
+                  <span className="item-price">${lastOrder.deliveryFee}</span>
+                </div>
+              )}
+              <div className="summary-total">
+                <span className="total-label">Total Paid</span>
+                <span className="total-price">${lastOrder.total}</span>
+              </div>
+            </div>
+
+            <p className="receipt-time">
+              Ordered on {orderDate.toLocaleDateString()} at{" "}
+              {orderDate.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+
+            <div className="receipt-actions">
+              <button type="button" className="secondary-btn" onClick={handleNewOrder}>
+                Place Another Order
+              </button>
+              <button type="button" className="clear-btn" onClick={handleClearReceipt}>
+                Clear Saved Receipt
+              </button>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="App">
@@ -171,7 +370,7 @@ function App() {
       </header>
       <main>
         <form className="pizza-order-form" onSubmit={handleSubmit}>
-          <h2>Place your order</h2>
+          <h2>Place Your Order</h2>
           <section className="customer-info">
             <h3>Customer Info</h3>
             <div className="form-group">
@@ -186,16 +385,11 @@ function App() {
                     ...customerInfo,
                     name: e.target.value,
                   });
-                  if (formState.currentErrors.name) {
-                    setFormState((prev) => ({
-                      ...prev,
-                      currentErrors: { ...prev.currentErrors, name: "" },
-                    }));
-                  }
+                  clearError("name");
                 }}
                 onBlur={checkValidation}
                 className={formState.currentErrors?.name ? "error" : ""}
-                placeholder="Enter yor full name"
+                placeholder="Enter your full name"
                 required
               />
               {formState.currentErrors.name && (
@@ -217,13 +411,7 @@ function App() {
                     ...customerInfo,
                     phone: e.target.value,
                   });
-
-                  if (formState.currentErrors.phone) {
-                    setFormState((prev) => ({
-                      ...prev,
-                      currentErrors: { ...prev.currentErrors, phone: "" },
-                    }));
-                  }
+                  clearError("phone");
                 }}
                 onBlur={checkValidation}
                 className={formState.currentErrors?.phone ? "error" : ""}
@@ -236,8 +424,9 @@ function App() {
                 </span>
               )}
             </div>
+
             <div className="form-group">
-              <label htmlFor="customer-email">Email address</label>
+              <label htmlFor="customer-email">Email Address</label>
               <input
                 type="email"
                 id="customer-email"
@@ -248,16 +437,11 @@ function App() {
                     ...customerInfo,
                     email: e.target.value,
                   });
-                  if (formState.currentErrors.email) {
-                    setFormState((prev) => ({
-                      ...prev,
-                      currentErrors: { ...prev.currentErrors, email: "" },
-                    }));
-                  }
+                  clearError("email");
                 }}
                 onBlur={checkValidation}
                 className={formState.currentErrors?.email ? "error" : ""}
-                placeholder="your.eamil@eaxample.com"
+                placeholder="your.email@example.com"
                 required
               />
               {formState.currentErrors.email && (
@@ -266,8 +450,9 @@ function App() {
                 </span>
               )}
             </div>
+
             <div className="form-group">
-              <label htmlFor="customer-address">Delivery address</label>
+              <label htmlFor="customer-address">Delivery Address</label>
               <textarea
                 id="customer-address"
                 name="address"
@@ -277,12 +462,7 @@ function App() {
                     ...customerInfo,
                     address: e.target.value,
                   });
-                  if (formState.currentErrors.address) {
-                    setFormState((prev) => ({
-                      ...prev,
-                      currentErrors: { ...prev.currentErrors, address: "" },
-                    }));
-                  }
+                  clearError("address");
                 }}
                 onBlur={checkValidation}
                 className={formState.currentErrors?.address ? "error" : ""}
@@ -295,9 +475,10 @@ function App() {
                 </span>
               )}
             </div>
+
             <div className="form-group">
               <fieldset>
-                <legend>Order Type</legend>                
+                <legend>Order Type</legend>
                 <div className="radio-group">
                   <label>
                     <input
@@ -312,7 +493,7 @@ function App() {
                         })
                       }
                     />
-                    Delivery(45-60 minutes)
+                    Delivery (45-60 minutes)
                   </label>
 
                   <label>
@@ -328,7 +509,7 @@ function App() {
                         })
                       }
                     />
-                    Pick up
+                    Pickup
                   </label>
                 </div>
               </fieldset>
@@ -336,15 +517,15 @@ function App() {
           </section>
 
           <section className="pizza-customization">
-            <h3>Build your pizza</h3>
+            <h3>Build Your Pizza</h3>
             <div className="form-group">
               <label htmlFor="pizza-size">Pizza Size</label>
               <select
-                id="pizz-size"
+                id="pizza-size"
                 name="size"
                 value={pizzaOrder.size}
                 onChange={(e) =>
-                  setPizzaorder({
+                  setPizzaOrder({
                     ...pizzaOrder,
                     size: e.target.value,
                   })
@@ -356,6 +537,7 @@ function App() {
                 <option value="xlarge">Extra Large 16" - $21.99</option>
               </select>
             </div>
+
             <div className="form-group">
               <label htmlFor="pizza-crust">Pizza Crust</label>
               <select
@@ -363,7 +545,7 @@ function App() {
                 name="crust"
                 value={pizzaOrder.crust}
                 onChange={(e) =>
-                  setPizzaorder({
+                  setPizzaOrder({
                     ...pizzaOrder,
                     crust: e.target.value,
                   })
@@ -372,17 +554,47 @@ function App() {
                 <option value="regular">Regular Crust</option>
                 <option value="thin">Thin Crust (+$1.00)</option>
                 <option value="thick">Thick Crust (+$2.00)</option>
-                <option value="stufffed">Stuffed Crust (+$3.00)</option>
+                <option value="stuffed">Stuffed Crust (+$3.00)</option>
               </select>
             </div>
+
             <div className="form-group">
-              <fieldset className={formState.currentErrors?.toppings ? "error" : ""} onBlur={checkValidation}>
-                <legend>Your Toppings (Each +$1.50)</legend>
-                {formState.currentErrors.toppings && (
+              <label htmlFor="pizza-quantity">Quantity</label>
+              <input
+                type="number"
+                id="pizza-quantity"
+                name="quantity"
+                min="1"
+                max="20"
+                value={pizzaOrder.quantity}
+                onChange={(e) => {
+                  setPizzaOrder({
+                    ...pizzaOrder,
+                    quantity: Math.max(1, Number(e.target.value) || 1),
+                  });
+                  clearError("quantity");
+                }}
+                onBlur={checkValidation}
+                className={formState.currentErrors?.quantity ? "error" : ""}
+              />
+              {formState.currentErrors.quantity && (
                 <span className="error-message">
-                  {formState.currentErrors.toppings}
+                  {formState.currentErrors.quantity}
                 </span>
               )}
+            </div>
+
+            <div className="form-group">
+              <fieldset
+                className={formState.currentErrors?.toppings ? "error" : ""}
+                onBlur={checkValidation}
+              >
+                <legend>Your Toppings (Each +$1.50)</legend>
+                {formState.currentErrors.toppings && (
+                  <span className="error-message">
+                    {formState.currentErrors.toppings}
+                  </span>
+                )}
                 <div className="toppings-grid">
                   {[
                     "pepperoni",
@@ -391,7 +603,7 @@ function App() {
                     "green peppers",
                     "onions",
                     "black olives",
-                    "extra chesse",
+                    "extra cheese",
                     "bacon",
                     "ham",
                     "pineapple",
@@ -406,58 +618,95 @@ function App() {
                         checked={pizzaOrder.toppings.includes(topping)}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            setPizzaorder({
+                            setPizzaOrder({
                               ...pizzaOrder,
                               toppings: [...pizzaOrder.toppings, topping],
                             });
                           } else {
-                            setPizzaorder({
+                            setPizzaOrder({
                               ...pizzaOrder,
                               toppings: pizzaOrder.toppings.filter(
                                 (t) => t !== topping,
                               ),
                             });
                           }
-                          if (formState.currentErrors.toppings) {
-                            setFormState((prev) => ({
-                              ...prev,
-                              currentErrors: {
-                                ...prev.currentErrors,
-                                toppings: [],
-                              },
-                            }));
-                          }
-                          
-                        }}                        
+                          clearError("toppings");
+                        }}
                       />
                       {topping.charAt(0).toUpperCase() + topping.slice(1)}
                     </label>
                   ))}
                 </div>
-                <div className="form-group">
-                  <label htmlFor="special-instructions">
-                    Special Instructions(Optional)
-                  </label>
-                  <textarea
-                    id="special-instructions"
-                    name="specialInstructions"
-                    value={pizzaOrder.specialInstructions}
-                    onChange={(e) =>
-                      setPizzaorder({
-                        ...pizzaOrder,
-                        specialInstructions: e.target.value,
-                      })
-                    }
-                    placeholder="Any Special Request"
-                    rows={3}
-                    maxLength={200}
-                  >
-                    <small className="character-count">
-                      {pizzaOrder.specialInstructions.length}/200 Characters
-                    </small>
-                  </textarea>
+              </fieldset>
+            </div>
+
+            <div className="form-group">
+              <fieldset>
+                <legend>Add Sides</legend>
+                <div className="sides-list">
+                  {sideOptions.map((side) => {
+                    const selectedSide = pizzaOrder.sides.find(
+                      (item) => item.id === side.id,
+                    );
+
+                    return (
+                      <div className="side-option" key={side.id}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            name="sides"
+                            value={side.id}
+                            checked={Boolean(selectedSide)}
+                            onChange={(e) => updateSide(side, e.target.checked)}
+                          />
+                          <span>
+                            {side.name} - ${side.price.toFixed(2)}
+                          </span>
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={selectedSide?.quantity || 1}
+                          disabled={!selectedSide}
+                          aria-label={`${side.name} quantity`}
+                          onChange={(e) =>
+                            updateSideQuantity(side.id, e.target.value)
+                          }
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </fieldset>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="special-instructions">
+                Special Instructions (Optional)
+              </label>
+              <textarea
+                id="special-instructions"
+                name="specialInstructions"
+                value={pizzaOrder.specialInstructions}
+                onChange={(e) =>
+                  setPizzaOrder({
+                    ...pizzaOrder,
+                    specialInstructions: e.target.value,
+                  })
+                }
+                placeholder="Any special request"
+                rows={3}
+                maxLength={200}
+              />
+              <small className="character-count">
+                {pizzaOrder.specialInstructions.length}/200 Characters
+              </small>
+            </div>
+            <div className="form-group">
+                <button type="button" className="clear-reset-btn" onClick={handleNewOrder}>
+                  Clear/Reset
+                </button>
             </div>
           </section>
 
@@ -466,76 +715,74 @@ function App() {
 
             <div className="summary-item">
               <span className="item-name">
-                {pizzaOrder.size.charAt(0).toUpperCase() +
-                  pizzaOrder.size.slice(1)}{" "}
-                Pizza ({pizzaOrder.crust} Crust)
+                {pizzaOrder.quantity} x {formatLabel(pizzaOrder.size)} Pizza (
+                {formatLabel(pizzaOrder.crust)} Crust)
               </span>
               <span className="item-price">
-                $
-                {(() => {
-                  const sizePrices = {
-                    small: 12.99,
-                    medium: 15.99,
-                    large: 18.99,
-                    xlarge: 21.99,
-                  };
-                  const crustPrices = {
-                    regular: 0,
-                    thin: 1.0,
-                    thick: 2.0,
-                    stuffed: 3.0,
-                  };
-                  return (
-                    sizePrices[pizzaOrder.size] + crustPrices[pizzaOrder.crust]
-                  ).toFixed(2);
-                })()}
+                ${(getPizzaBasePrice(pizzaOrder) * pizzaOrder.quantity).toFixed(2)}
               </span>
-
-              {pizzaOrder.toppings.length > 0 && (
-                <div className="summary-item">
-                  <span className="item-name">
-                    Toppings: {pizzaOrder.toppings.join(", ")}
-                  </span>
-                  <span className="item-price">
-                    ${(pizzaOrder.toppings.length * 1.5).toFixed(2)}
-                  </span>
-                </div>
-              )}
-              {customerInfo.isDelivery && (
-                <div className="summary-item">
-                  <span className="item-name">Delivery Fee</span>
-                  <span className="item-price">$2.99</span>
-                </div>
-              )}
-              <div className="summary-total">
-                <span className="total-label">Total</span>
-                <span className="total-price">${calculateTotalprice()}</span>
-              </div>
-              {customerInfo.name && (
-                <div className="customer-detailed">
-                  <p>
-                    <strong>Customer:</strong> {customerInfo.name}
-                  </p>
-                  {customerInfo.phone && (
-                    <p>
-                      <strong>Phone:</strong>
-                      {customerInfo.phone}
-                    </p>
-                  )}
-                  {customerInfo.isDelivery ? (
-                    <p>
-                      <strong>Delivery to:</strong>
-                      {customerInfo.address || "Address needed"}
-                    </p>
-                  ) : (
-                    <p>
-                      <strong>Pickup</strong> at Mario's pizza(Est. 20-30
-                      minutes)
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
+
+            {pizzaOrder.toppings.length > 0 && (
+              <div className="summary-item">
+                <span className="item-name">
+                  Toppings: {pizzaOrder.toppings.join(", ")}
+                </span>
+                <span className="item-price">
+                  ${(pizzaOrder.toppings.length * 1.5 * pizzaOrder.quantity).toFixed(2)}
+                </span>
+              </div>
+            )}
+
+            {pizzaOrder.sides.length > 0 && (
+              <div className="summary-group">
+                {pizzaOrder.sides.map((side) => (
+                  <div className="summary-item" key={side.id}>
+                    <span className="item-name">
+                      {side.quantity} x {side.name}
+                    </span>
+                    <span className="item-price">
+                      ${(side.price * side.quantity).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {customerInfo.isDelivery && (
+              <div className="summary-item">
+                <span className="item-name">Delivery Fee</span>
+                <span className="item-price">$2.99</span>
+              </div>
+            )}
+
+            <div className="summary-total">
+              <span className="total-label">Total</span>
+              <span className="total-price">${calculateTotalPrice()}</span>
+            </div>
+
+            {customerInfo.name && (
+              <div className="customer-detailed">
+                <p>
+                  <strong>Customer:</strong> {customerInfo.name}
+                </p>
+                {customerInfo.phone && (
+                  <p>
+                    <strong>Phone:</strong> {customerInfo.phone}
+                  </p>
+                )}
+                {customerInfo.isDelivery ? (
+                  <p>
+                    <strong>Delivery to:</strong>{" "}
+                    {customerInfo.address || "Address needed"}
+                  </p>
+                ) : (
+                  <p>
+                    <strong>Pickup</strong> at Mario's Pizza (Est. 20-30 minutes)
+                  </p>
+                )}
+              </div>
+            )}
           </section>
 
           <button
@@ -543,17 +790,14 @@ function App() {
             className="submit-btn"
             disabled={formState.isSubmitting}
           >
-            {formState.isSubmitting ? (
-              <>
-                <span className="loading-spinner">Proccessing Order...</span>
-              </>
-            ) : (
-              `Place Order - ${calculateTotalprice()}`
-            )}
+            {formState.isSubmitting
+              ? "Processing Order..."
+              : `Place Order - $${calculateTotalPrice()}`}
           </button>
         </form>
       </main>
     </div>
   );
 }
+
 export default App;
